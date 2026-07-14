@@ -69,12 +69,12 @@
     { name: "베스트 버그 제보", info: "20:15 교차 플레이 QA",             slots: 1 },
     { name: "보너스 꾸미기",   info: "다크모드·효과음·이스터에그",        slots: 3 },
   ];
-  const TEAMS = 3;
+  const TEAMS = 4;
   const KEY = "points_board";   // 현황판도 localStorage에 저장 — 새로고침해도 도장이 남습니다!
 
   function load() {
     return JSON.parse(localStorage.getItem(KEY) || "null") || {
-      names: ["1팀", "2팀", "3팀"],
+      names: ["1팀", "2팀", "3팀", "4팀"],
       stamps: {},   // "팀-미션-슬롯": true
       log: [],      // 도장 기록 로그 (시간 · 팀 · 미션 · 동작)
     };
