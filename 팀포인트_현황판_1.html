@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>팀 포인트 현황판</title>
+<style>
+  :root { --ink: #22335C; --sub: #6B7690; --bg: #FBF8F0; --card: #FFFFFF; --amber: #F5C445; --amberD: #D99B0B; --line: #EEE8DA; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; padding: 28px 20px; display: flex; flex-direction: column; align-items: center; }
+  h1 { font-size: 34px; letter-spacing: -0.5px; }
+  .sub { color: var(--amberD); font-weight: bold; margin: 6px 0 22px; }
+
+  table { border-collapse: separate; border-spacing: 0; background: var(--card); border-radius: 16px; box-shadow: 0 6px 20px rgba(34,51,92,.08); overflow: hidden; }
+  th { background: var(--ink); color: #fff; padding: 12px 10px; font-size: 13px; line-height: 1.35; min-width: 104px; vertical-align: top; }
+  th small { display: block; font-weight: normal; color: #AAB8DC; font-size: 10.5px; margin-top: 4px; }
+  th.teamcol { min-width: 120px; }
+  td { border-top: 1px solid var(--line); padding: 12px 8px; text-align: center; }
+  td.team { font-size: 18px; font-weight: 800; }
+  td.team [contenteditable] { outline: none; border-bottom: 2px dashed var(--line); padding: 2px 8px; min-width: 70px; display: inline-block; }
+  td.team [contenteditable]:focus { border-bottom-color: var(--amber); }
+  td.total { font-size: 26px; font-weight: 800; color: var(--amberD); }
+
+  .stamp { width: 52px; height: 52px; border-radius: 50%; border: 3px dashed #D8D2C4; background: #FBF8F0; cursor: pointer; font-size: 24px; color: transparent; transition: transform .1s, background .15s; vertical-align: middle; margin: 0 3px; }
+  .stamp:hover { transform: scale(1.1); border-color: var(--amber); }
+  .stamp.on { background: var(--amber); border: 3px solid var(--amberD); color: var(--ink); animation: pop .25s; }
+  @keyframes pop { 0% { transform: scale(0.5); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
+
+  .awards { display: flex; gap: 12px; margin-top: 22px; flex-wrap: wrap; justify-content: center; }
+  .award { background: var(--card); border: 2px solid var(--amber); border-radius: 999px; padding: 9px 18px; font-weight: bold; font-size: 14px; box-shadow: 0 3px 10px rgba(34,51,92,.06); }
+  .award-note { color: var(--sub); font-size: 12.5px; margin-top: 10px; }
+  .toolbar { margin-top: 18px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .toolbar button { background: none; border: 1px solid var(--line); color: var(--sub); border-radius: 8px; padding: 6px 14px; font-size: 12px; cursor: pointer; }
+  .toolbar button:hover { border-color: var(--amberD); color: var(--amberD); }
+  .toolbar button.primary { background: var(--amber); border-color: var(--amberD); color: var(--ink); font-weight: bold; }
+  #folderStatus { font-size: 12px; color: var(--sub); }
+  #folderStatus.on { color: #27B85B; font-weight: bold; }
+</style>
+</head>
+<body>
+  <h1>팀 포인트 현황판</h1>
+  <div class="sub">미션 1개 완료 = 도장 1개! · 도장을 클릭하면 찍힙니다</div>
+
+  <table id="board"></table>
+
+  <div class="awards">
+    <span class="award">🏆 최고 기획상</span>
+    <span class="award">🛠 최고 기술상</span>
+    <span class="award">🎤 최고 발표상</span>
+    <span class="award">🔥 개근 열정상</span>
+  </div>
+  <div class="award-note">오늘 밤 20:50 시상식 — 누적 도장은 시상에 가산됩니다</div>
+
+  <div class="toolbar">
+    <button class="primary" id="folderBtn" onclick="connectFolder()">📁 기록 폴더 연결</button>
+    <button onclick="downloadRecord()">기록 파일 내려받기</button>
+    <button onclick="resetAll()">전체 초기화</button>
+    <span id="folderStatus">폴더 미연결 — 도장 기록은 브라우저 안(localStorage)에만 저장 중</span>
+  </div>
+
+<script>
+  const MISSIONS = [
+    { name: "베스트 팀명",     info: "17:10 팀명 대결 승리",              slots: 1 },
+    { name: "기획서 완성",     info: "17:55 Canva 기획서 + 화면 스케치",  slots: 1 },
+    { name: "첫 배포 성공",    info: "18:20 URL 획득 — 오늘의 첫 승리",   slots: 1 },
+    { name: "미션1 클리어",    info: "제목·색상 바꾸기",                  slots: 1 },
+    { name: "미션2 클리어",    info: "핵심 기능 추가",                    slots: 1 },
+    { name: "데이터 저장 성공", info: "Supabase 표에 내 이름",            slots: 1 },
+    { name: "베스트 버그 제보", info: "20:15 교차 플레이 QA",             slots: 1 },
+    { name: "보너스 꾸미기",   info: "다크모드·효과음·이스터에그",        slots: 3 },
+  ];
+  const TEAMS = 3;
+  const KEY = "points_board";   // 현황판도 localStorage에 저장 — 새로고침해도 도장이 남습니다!
+
+  function load() {
+    return JSON.parse(localStorage.getItem(KEY) || "null") || {
+      names: ["1팀", "2팀", "3팀"],
+      stamps: {},   // "팀-미션-슬롯": true
+      log: [],      // 도장 기록 로그 (시간 · 팀 · 미션 · 동작)
+    };
+  }
+  function save(data) {
+    localStorage.setItem(KEY, JSON.stringify(data));
+    writeToFolder(data);   // 폴더가 연결되어 있으면 눈에 보이는 파일로도 저장
+  }
+
+  // ============ 눈에 보이는 기록: 폴더에 파일로 저장 ============
+  let dirHandle = null;
+
+  async function connectFolder() {
+    if (!window.showDirectoryPicker) {
+      alert("이 브라우저는 폴더 저장을 지원하지 않습니다 (크롬/엣지 사용). 대신 '기록 파일 내려받기'를 쓰세요.");
+      return;
+    }
+    try {
+      dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+      document.getElementById("folderStatus").textContent = "기록 폴더 연결됨: " + dirHandle.name + " — 도장을 찍을 때마다 파일이 갱신됩니다";
+      document.getElementById("folderStatus").className = "on";
+      writeToFolder(load());
+    } catch (e) { /* 사용자가 취소한 경우 */ }
+  }
+
+  function recordText(data) {
+    const lines = [];
+    lines.push("===== 팀 포인트 현황판 기록 =====");
+    lines.push("마지막 갱신: " + new Date().toLocaleString("ko-KR"));
+    lines.push("");
+    lines.push("[현재 점수]");
+    for (let t = 0; t < TEAMS; t++) lines.push(`  ${data.names[t]} : 도장 ${totalOf(data, t)}개`);
+    lines.push("");
+    lines.push("[도장 기록 로그]");
+    if (!data.log.length) lines.push("  아직 기록 없음");
+    data.log.forEach(e => lines.push(`  ${e.time} · ${e.team} · ${e.mission} · ${e.action}`));
+    return lines.join("\r\n");
+  }
+
+  async function writeToFolder(data) {
+    if (!dirHandle) return;
+    try {
+      // 사람이 읽는 기록 (메모장으로 열어보세요)
+      const txt = await dirHandle.getFileHandle("팀포인트_기록.txt", { create: true });
+      const w1 = await txt.createWritable(); await w1.write(recordText(data)); await w1.close();
+      // 데이터 원본 (백업/복구용)
+      const json = await dirHandle.getFileHandle("팀포인트_기록.json", { create: true });
+      const w2 = await json.createWritable(); await w2.write(JSON.stringify(data, null, 2)); await w2.close();
+    } catch (e) {
+      document.getElementById("folderStatus").textContent = "폴더 쓰기 실패 — 다시 연결해주세요";
+      document.getElementById("folderStatus").className = "";
+      dirHandle = null;
+    }
+  }
+
+  function downloadRecord() {
+    // 폴더 연결이 안 되는 환경용: 다운로드 폴더로 기록 파일 내려받기
+    const blob = new Blob([recordText(load())], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "팀포인트_기록.txt";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  // =============================================================
+
+  function totalOf(data, t) {
+    return Object.keys(data.stamps).filter(k => k.startsWith(t + "-") && data.stamps[k]).length;
+  }
+
+  function render() {
+    const data = load();
+    let html = "<tr><th class='teamcol'>팀</th>";
+    MISSIONS.forEach(m => html += `<th>${m.name}<small>${m.info}</small></th>`);
+    html += "<th>합계</th></tr>";
+
+    for (let t = 0; t < TEAMS; t++) {
+      html += `<tr><td class="team"><span contenteditable spellcheck="false" onblur="rename(${t}, this.textContent)">${data.names[t]}</span></td>`;
+      MISSIONS.forEach((m, mi) => {
+        html += "<td>";
+        for (let s = 0; s < m.slots; s++) {
+          const k = `${t}-${mi}-${s}`;
+          const on = data.stamps[k] ? "on" : "";
+          html += `<button class="stamp ${on}" onclick="toggle('${k}')">★</button>`;
+        }
+        html += "</td>";
+      });
+      html += `<td class="total">${totalOf(data, t)}</td></tr>`;
+    }
+    document.getElementById("board").innerHTML = html;
+  }
+
+  function toggle(k) {
+    const data = load();
+    data.stamps[k] = !data.stamps[k];
+    const [t, mi] = k.split("-").map(Number);
+    data.log.push({
+      time: new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }),
+      team: data.names[t],
+      mission: MISSIONS[mi].name,
+      action: data.stamps[k] ? "도장!" : "도장 취소",
+    });
+    save(data);
+    render();
+  }
+
+  function rename(t, name) {
+    const data = load();
+    data.names[t] = name.trim() || (t + 1) + "팀";
+    save(data);
+    render();
+  }
+
+  function resetAll() {
+    if (confirm("모든 도장과 팀명을 초기화할까요?")) {
+      localStorage.removeItem(KEY);
+      render();
+    }
+  }
+
+  render();
+</script>
+</body>
+</html>
